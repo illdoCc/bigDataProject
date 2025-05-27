@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import traceback
+from dotenv import load_dotenv
 
 app = FastAPI()
 
@@ -26,11 +27,13 @@ app.add_middleware(
     allow_headers=["*"],              # 允許的 HTTP 標頭
 )
 
-DB_HOST = "localhost"
-DB_PORT = "8080"
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASSWORD = "admin"
+load_dotenv()
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "8080")
+DB_NAME = os.getenv("DB_NAME", "postgres")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "admin")
 
 @app.get("/start")
 def clear_and_load_stock():
