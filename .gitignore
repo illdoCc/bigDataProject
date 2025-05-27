@@ -1,5 +1,4 @@
 .venv
-stock.csv
 t.py
 test.py
 .gitignore
