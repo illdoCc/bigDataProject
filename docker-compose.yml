@@ -12,6 +12,12 @@ services:
       POSTGRES_DB: ${DB_NAME}
     volumes:
       - big_data_db_data:/var/lib/postgresql/data
-
+  api:
+    build:
+      context: .
+    ports:
+      - 80:80
+    profiles:
+      - prod
 volumes:
   big_data_db_data:
