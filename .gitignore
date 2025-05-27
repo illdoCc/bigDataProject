@@ -4,3 +4,4 @@ t.py
 test.py
 .gitignore
 /arima
+# /__pycache__
