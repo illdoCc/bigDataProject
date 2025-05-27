@@ -4,4 +4,9 @@ t.py
 test.py
 .gitignore
 /arima
-# /__pycache__
+/__pycache__
+.env
+
+# editor generated
+.mypy_cache
+.null-ls*
