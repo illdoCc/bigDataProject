@@ -122,7 +122,7 @@ class Portfolio(BaseModel):
     stocks: list
 
 @app.post("/advance/{day}")
-def next_day_game(day, portfolio: Portfolio):
+def next_day_game(day:int, portfolio: Portfolio):
     try:
         # 連線資料庫
         conn = psycopg2.connect(
@@ -139,8 +139,10 @@ def next_day_game(day, portfolio: Portfolio):
         histories = []
 
         # model_list = ['arima', 'RNN', 'lstm', 'RF', 'XGB']
-        # rows = cur.execute
-        cur.execute("SELECT * FROM history")
+
+        # only updates the history with history of previous day
+        # -2 because database starts from day 0, but frontend starts from day 1
+        cur.execute("SELECT * FROM history WHERE day=%s",(str(day-2)))
         rows = cur.fetchall()
         for row in rows:
             day, user_name, holdings, cash = row
@@ -177,7 +179,7 @@ def next_day_game(day, portfolio: Portfolio):
             "histories": histories
         }
     except Exception as e:
-        return {"error": traceback.format_exc()}
+        raise HTTPException(status_code=400, detail=str(e))
 # end of next_day_game
 
 
@@ -199,10 +201,9 @@ def get_latest_stock_price(cur, day):
     return latest_stock_price
 # end of get_latest_stock_price
 
-def player_portfolio(cur, day, portfolio):
+def player_portfolio(cur, day:int, portfolio):
     portfolio = portfolio.stocks
-    day = int(day)
-    cur.execute("SELECT * FROM history WHERE user_name = %s", ("player",))
+    cur.execute("SELECT * FROM history WHERE user_name = %s AND day= %s", ("player",str(day-1)))
     player_info = cur.fetchone()
     _, user_name, holdings, cash = player_info
     holdings = json.loads(holdings)
