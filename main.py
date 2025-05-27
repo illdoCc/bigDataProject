@@ -15,7 +15,7 @@ app = FastAPI()
 origins = [
     "http://localhost",
     "http://localhost:3000",
-    "http://localhost:5173", 
+    "http://localhost:5173",
     "https://stock.leowang.dev"
 ]
 
@@ -52,14 +52,14 @@ def clear_and_load_stock():
         # 清空兩個表格
         cur.execute("TRUNCATE TABLE history RESTART IDENTITY CASCADE;")
         cur.execute("TRUNCATE TABLE stock RESTART IDENTITY CASCADE;")
-            
+
         df = pd.read_csv("stock.csv", encoding='big5')
         ids = df.loc[:, "股票代碼"].drop_duplicates(ignore_index=True)
         df['日期'] = pd.to_datetime(df['日期'])
 
         with open('stock_name.json', 'r', encoding='UTF-8') as f:
             stock_name = json.load(f)
-        
+
         # 刷新stock table
         stock_init_prices = [] # return value
         holdings = []
@@ -67,10 +67,10 @@ def clear_and_load_stock():
             # 取30天
             start_date = datetime.strptime('2021/2/25', '%Y/%m/%d')
             end_date = start_date + pd.Timedelta(days=60)
-            filtered = df[(df['股票代碼'] == stock_symbol) & 
-                        (df['日期'] >= start_date) & 
+            filtered = df[(df['股票代碼'] == stock_symbol) &
+                        (df['日期'] >= start_date) &
                         (df['日期'] <= end_date)]
-            
+
 
             prices_list = filtered['收盤價'].round(2).tolist()
             stock_init_prices.append({
@@ -92,13 +92,13 @@ def clear_and_load_stock():
 
 
         histories = [] # return value
-        user_list = ['player', 'al_lstm', 'al_arima', 'al_RNN', 'al_RF', 'al_XGB', 'llm_lstm', 'llm_arima', 'llm_RNN', 'llm_RF', 'llm_lstm', 'no_buy']    
+        user_list = ['player', 'al_lstm', 'al_arima', 'al_RNN', 'al_RF', 'al_XGB', 'llm_lstm', 'llm_arima', 'llm_RNN', 'llm_RF', 'llm_lstm', 'no_buy']
         for user in user_list:
             cur.execute(
                 "INSERT INTO history (day, user_name, holdings, cash) VALUES (%s, %s, %s, %s);",
                 (0, user, json.dumps(holdings), 5000000.0)
             )
-        
+
             histories.append({
                 "day": 1,
                 "user_name": user,
@@ -109,14 +109,14 @@ def clear_and_load_stock():
         cur.close()
         conn.close()
         return {
-            "stocks": stock_init_prices, 
+            "stocks": stock_init_prices,
             "histories": histories
         }
     except Exception as e:
         return {"error": str(e)}
-    
 
-    
+
+
 
 class Portfolio(BaseModel):
     stocks: list
@@ -137,7 +137,7 @@ def next_day_game(day, portfolio: Portfolio):
 
         latest_stock_price = get_latest_stock_price(cur, day)
         histories = []
-        
+
         # model_list = ['arima', 'RNN', 'lstm', 'RF', 'XGB']
         # rows = cur.execute
         cur.execute("SELECT * FROM history")
@@ -145,7 +145,7 @@ def next_day_game(day, portfolio: Portfolio):
         for row in rows:
             day, user_name, holdings, cash = row
             day += 1
-            
+
             if user_name == 'no_buy':
                 cur.execute(
                     "INSERT INTO history (day, user_name, holdings, cash) VALUES (%s, %s, %s, %s);",
@@ -162,18 +162,18 @@ def next_day_game(day, portfolio: Portfolio):
                 # )
             elif user_name == 'player':
                 histories.append(player_portfolio(cur, day, portfolio))
-            
+
         for history in histories:
             cur.execute(
                 "INSERT INTO history (day, user_name, holdings, cash) VALUES (%s, %s, %s, %s);",
                 (history["day"], history["user_name"], json.dumps(history["holdings"]), history["cash"])
             )
-                
- 
+
+
         cur.close()
         conn.close()
         return {
-            "stocks": latest_stock_price, 
+            "stocks": latest_stock_price,
             "histories": histories
         }
     except Exception as e:
@@ -220,7 +220,7 @@ def player_portfolio(cur, day, portfolio):
         cash += (history_prices[day] - buy_or_sell_price) * buy_or_sell_amount
         if cash < 0:
             cash = 0
-        
+
     return {
         "day": day,
         "user_name": "player",
@@ -228,7 +228,7 @@ def player_portfolio(cur, day, portfolio):
         "cash": cash
     }
 
-        
+
 
 
 # 取得模型預測價格
