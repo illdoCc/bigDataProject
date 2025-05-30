@@ -5,7 +5,7 @@ test.py
 /arima
 /__pycache__
 .env
-
+models/
 # editor generated
 .mypy_cache
 .null-ls*
