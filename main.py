@@ -42,16 +42,8 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "admin")
 with open('predict_price/price_labels.json', 'r', encoding='UTF-8') as f:
     price_labels = json.load(f)
 
-with open('predict_price/rf_predict_prices.json', 'r', encoding='UTF-8') as f:
-    rf_predict_prices = json.load(f)
-with open('predict_price/lstm_predict_prices.json', 'r', encoding='UTF-8') as f:
-    lstm_predict_prices = json.load(f)
-with open('predict_price/rnn_predict_prices.json', 'r', encoding='UTF-8') as f:
-    rnn_predict_prices = json.load(f)
-with open('predict_price/xgb_predict_prices.json', 'r', encoding='UTF-8') as f:
-    xgb_predict_prices = json.load(f)
-with open('predict_price/arima_predict_prices.json', 'r', encoding='UTF-8') as f:
-    arima_predict_prices = json.load(f)
+with open('portfolio.json', 'r', encoding='UTF-8') as f:
+    model_portfolio = json.load(f)
 
 name_map = {'player': 'player', 'al_lstm': 'player(LSTM)','al_arima': 'player(ARIMA)','al_RNN': 'player(RNN)','al_RF': 'player(Random Forest)','al_XGB': 'player(XGBoost)','no_buy': 'player(No Buy)'}
 
@@ -173,7 +165,7 @@ def next_day_game(day:int, portfolio: Portfolio):
             if user_name == 'no_buy':
                 histories.append({
                     "day": day,
-                    "user_name":  name_map['no_buy'],
+                    "user_name": 'no_buy',
                     "holdings": json.loads(holdings),
                     "cash": cash
                 })
@@ -194,7 +186,11 @@ def next_day_game(day:int, portfolio: Portfolio):
             "INSERT INTO history (day, user_name, holdings, cash) VALUES (%s, %s, %s, %s);",
             records
         )
+        # print(records)
 
+        for history in histories:
+            # print(history[user_name])
+            history['user_name'] = name_map[history['user_name']]
 
         cur.close()
         conn.close()
@@ -265,30 +261,19 @@ def player_portfolio(cur, day:int, portfolio):
 
 # 依據預測價格決定買與賣多少
 def model_buy_or_sell(day, model, holdings, cash):
-    print("TEST1")
-    current_price = {stock_id: values[day] for stock_id, values in price_labels.items() if len(values) > day}
-    if model == 'RF':
-        predicted_prices=rf_predict_prices[str(day)]
-    elif model == "XGB":
-        predicted_prices=xgb_predict_prices[str(day)]
-    elif model == "lstm":
-        predicted_prices=lstm_predict_prices[str(day)]
-    elif model == 'RNN':
-        predicted_prices=rnn_predict_prices[str(day)]
-    elif model == 'arima':
-        predicted_prices=arima_predict_prices[str(day)]
+    # current_price = {stock_id: values[day] for stock_id, values in price_labels.items() if len(values) > day}
+    portfolio = model_portfolio[str(day)][model]
 
-    portfolio = algorithm.optimize_portfolio_dict(
-        current_price=current_price, 
-        predicted_prices=predicted_prices,
-        current_holding_array=holdings,
-        total_capital=cash*0.1
-    )
-
-    print("TEST2")
+    
+    
+    # portfolio = algorithm.optimize_portfolio_dict(
+    #     current_price=current_price, 
+    #     predicted_prices=predicted_prices,
+    #     current_holding_array=holdings,
+    #     total_capital=cash*0.1
+    # )
     
     for stock, count in portfolio.items():
-        print(stock, count)
         history_price = price_labels[stock][day]  # 取得當天該股票價格
         buy_or_sell_amount = count
 
@@ -313,49 +298,7 @@ def model_buy_or_sell(day, model, holdings, cash):
 
     return {
         "day": day,
-        "user_name": name_map[f"al_{model}"],
+        "user_name": f"al_{model}",
         "holdings": holdings,
         "cash": cash
     }    
-
-
-def get_single_stock_subset(df, stock_id, start_date_str, num_records):
-    """
-    從指定股票代碼中，擷取從起始日開始的連續 num_records 筆交易日資料。
-    
-    參數：
-    - df: 整份股票資料（包含 '股票代碼' 和 '日期' 欄）
-    - stock_id: 股票代碼（如 1101）
-    - start_date_str: 起始日期（字串格式，如 '2020/1/3'）
-    - num_records: 要擷取幾筆資料（從起始日含當日開始）
-
-    回傳：
-    - 該股票的子 DataFrame（如果找到且筆數足夠）
-    - 若無資料或資料不足則回傳 None，並印出警告
-    """
-    # 轉換日期欄
-    df = df.copy()
-    df['日期'] = pd.to_datetime(df['日期'])
-    start_date = pd.to_datetime(start_date_str)
-
-    # 篩選該股票
-    stock_df = df[df['股票代碼'] == stock_id].sort_values('日期').reset_index(drop=True)
-
-    if stock_df.empty:
-        print(f"⚠ 找不到股票代碼 {stock_id} 的資料")
-        return None
-
-    # 找起始日期的位置
-    start_idx_list = stock_df.index[stock_df['日期'] == start_date].tolist()
-    if not start_idx_list:
-        print(f"⚠ 股票 {stock_id} 找不到起始日 {start_date.date()}")
-        return None
-
-    start_idx = start_idx_list[0]
-    sub_df = stock_df.iloc[start_idx:start_idx + num_records]
-
-    if len(sub_df) < num_records:
-        print(f"⚠ 股票 {stock_id} 起始日後不足 {num_records} 筆資料")
-        return None
-
-    return sub_df
