@@ -6,25 +6,10 @@ import os
 from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import rf_predict
 import traceback
 from dotenv import load_dotenv
+import algorithm
 import os
-import joblib
-
-def load_all_models(model_dir):
-    models = {}
-    for fname in os.listdir(model_dir):
-        if fname.endswith('.pkl'):
-            stock_code = fname.split('_')[-1].replace('.pkl', '')
-            models[stock_code] = joblib.load(os.path.join(model_dir, fname))
-    return models
-
-# 全域變數，API啟動時只執行一次
-all_rf_models = load_all_models('./models/rf')
-df = pd.read_csv('price.csv', encoding='big5')
-rf_predict_prices = rf_predict.predict_all_stocks_in_memory(df, all_rf_models)
-
 
 app = FastAPI()
 
@@ -51,6 +36,50 @@ DB_PORT = os.getenv("DB_PORT", "8080")
 DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "admin")
+
+conn = psycopg2.connect(
+    host=DB_HOST,
+    port=DB_PORT,
+    dbname=DB_NAME,
+    user=DB_USER,
+    password=DB_PASSWORD
+)
+cur = conn.cursor()
+
+cur.execute("SELECT * FROM stock;")
+rows = cur.fetchall()
+price_labels = {}
+for row in rows:
+    _, history_price, name, stock_symbol = row
+    price_labels[stock_symbol] = history_price
+
+cur.execute("""
+    SELECT day, predict_prices, 'rf' AS source FROM rf
+    UNION ALL
+    SELECT day, predict_prices, 'lstm' AS source FROM lstm
+    UNION ALL
+    SELECT day, predict_prices, 'xgb' AS source FROM xgb
+""")
+rows = cur.fetchall()
+
+# 建立三個 dict 來儲存
+rf_predict_prices = {}
+lstm_predict_prices = {}
+xgb_predict_prices = {}
+
+# 根據來源分類
+for day, price_json, source in rows:
+    prices = json.loads(price_json)
+    if source == 'rf':
+        rf_predict_prices[day] = prices
+    elif source == 'lstm':
+        lstm_predict_prices[day] = prices
+    elif source == 'xgb':
+        xgb_predict_prices[day] = prices
+
+cur.close()
+conn.close()
+
 
 @app.get("/start")
 def clear_and_load_stock():
@@ -140,7 +169,7 @@ class Portfolio(BaseModel):
 
 @app.post("/advance/{day}")
 def next_day_game(day:int, portfolio: Portfolio):
-    print(rf_predict_prices[day])
+    # print(rf_predict_prices[day])
     try:
         # 連線資料庫
         conn = psycopg2.connect(
@@ -167,7 +196,7 @@ def next_day_game(day:int, portfolio: Portfolio):
         for row in rows:
             day, user_name, holdings, cash = row
             day += 1
-            print(day)
+            # print(day)
             if user_name == 'no_buy':
                 histories.append({
                     "day": day,
@@ -177,22 +206,9 @@ def next_day_game(day:int, portfolio: Portfolio):
                 })
             elif user_name != 'player':
                 model = user_name.split('_')[1]
-                if model == "RF":
-                    for i, j, in rf_predict_prices.items():
-                        cur.execute(
-                            "INSERT INTO rf (day, predict_prices) VALUES (%s, %s);",
-                            (i, json.dumps(j))
-                        )
-                    print(rf_predict_prices)
-                    
+                if model == 'RF' or model == 'XGB' or model == 'lstm':
+                    histories.append(model_buy_or_sell(day, model, json.loads(holdings), cash))
                 
-                
-                # # 取得模型預測價格
-                # predict_prices = model_predict_price(model, day)
-                # model_prices[model] = predict_prices
-                # if model == "RF":
-                #     print(predict_prices)
-
             elif user_name == 'player':
                 histories.append(player_portfolio(cur, day, portfolio))
         
@@ -263,7 +279,7 @@ def player_portfolio(cur, day:int, portfolio):
         if holdings[int(portfo["id"])]["count"] < 0:
             raise HTTPException(status_code=400, detail="You do not have enough shares to sell.")
         
-        cash += (history_prices[day]) * buy_or_sell_amount
+        cash -= (history_prices[day]) * buy_or_sell_amount
         cash = max(cash, 0)
 
     return {
@@ -275,39 +291,57 @@ def player_portfolio(cur, day:int, portfolio):
 
 
 
-# get next day prices of all stocks
-def model_predict_price(model, day):
-    df = pd.read_csv('price.csv', encoding='big5')
-    with open('stock_name.json', 'r', encoding='UTF-8') as f:
-        stock_name = json.load(f)
-    with open('date.json', 'r', encoding='UTF-8') as f:
-        date = json.load(f)
-
-    if model == "RNN":
-        pass
-        # start_date = date[str(day - 7)]
-        # for stock_symbol, stock in stock_name.items():
-        #     sub_df = get_single_stock_subset(df, stock_symbol, start_date, 7)
-        #     pred = rnn_predict.predict_price(stock_symbol, sub_df)
-        #     predict_prices[stock_symbol] = pred
-        # return {"RNN": predict_prices}
-    # elif model == "lstm":
-    #     return {"lstm": predict_prices}
-    # elif model == "arima":
-    #     return {"arima": predict_prices}
-    elif model == "RF":
-        start_date = date[str(day-1)]
-        predict_prices = rf_predict.predict_all_stocks_in_memory(df, all_rf_models)
-        return predict_prices
-    # elif model == "XGB":
-    #     return {"XGB": predict_prices}
-            
-# end of model_predict_price
-
-
 # 依據預測價格決定買與賣多少
-def model_buy_or_sell(predict_prices, holdings, cash):
-    pass
+def model_buy_or_sell(day, model, holdings, cash):
+    print("TEST1")
+    current_price = {stock_id: values[day] for stock_id, values in price_labels.items() if len(values) > day}
+    if model == 'RF':
+        predicted_prices=rf_predict_prices[day],
+    elif model == "XGB":
+        predicted_prices=xgb_predict_prices[day],
+    elif model == "lstm":
+        predicted_prices=lstm_predict_prices[day],
+
+    portfolio = algorithm.optimize_portfolio_dict(
+        current_price=current_price, 
+        predicted_prices=predicted_prices,
+        current_holding_array=holdings,
+        total_capital=cash*0.1
+    )
+
+    print("TEST2")
+    
+    if model == 'RF' or model == 'XGB' or model == 'lstm':
+        for stock, count in portfolio.items():
+            print(stock, count)
+            history_price = price_labels[stock][day]  # 取得當天該股票價格
+            buy_or_sell_amount = count
+
+            # 根據股票代碼找到對應 holdings 中的那筆資料（原始 list 會被直接修改）
+            holding = next((item for item in holdings if item["stock_name"].startswith(stock)), None)
+
+            if holding is None:
+                raise ValueError(f"找不到股票代碼 {stock} 對應的持股資料")
+
+            transaction_amount = buy_or_sell_amount * history_price
+
+            if buy_or_sell_amount > 0:
+                # 買進：增加持股，減少現金
+                holding["count"] += buy_or_sell_amount
+                cash -= transaction_amount
+            elif buy_or_sell_amount < 0:
+                # 賣出：檢查是否持有足夠股票
+                if holding["count"] < abs(buy_or_sell_amount):
+                    raise ValueError(f"股票 {stock} 賣出失敗，持有數量不足")
+                holding["count"] += buy_or_sell_amount  # 負值等同於減少
+                cash += abs(transaction_amount)
+
+        return {
+            "day": day,
+            "user_name": f"al_{model}",
+            "holdings": holdings,
+            "cash": cash
+        }    
 
 
 def get_single_stock_subset(df, stock_id, start_date_str, num_records):
