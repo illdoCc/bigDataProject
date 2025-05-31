@@ -2,6 +2,8 @@ venv
 .venv
 t.py
 test.py
+test1.py
+test2.py
 .gitignore
 /arima
 /__pycache__
