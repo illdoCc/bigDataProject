@@ -15,8 +15,10 @@ services:
   api:
     build:
       context: .
+    env_file:
+      - .env
     ports:
-      - 80:80
+      - 8000:80
     profiles:
       - prod
 volumes:
