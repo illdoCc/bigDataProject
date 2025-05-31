@@ -37,54 +37,21 @@ DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "admin")
 
-conn = psycopg2.connect(
-    host=DB_HOST,
-    port=DB_PORT,
-    dbname=DB_NAME,
-    user=DB_USER,
-    password=DB_PASSWORD
-)
-cur = conn.cursor()
 
-cur.execute("SELECT * FROM stock;")
-rows = cur.fetchall()
-price_labels = {}
-for row in rows:
-    _, history_price, name, stock_symbol = row
-    price_labels[stock_symbol] = history_price
 
-cur.execute("""
-    SELECT day, predict_prices, 'rf' AS source FROM rf
-    UNION ALL
-    SELECT day, predict_prices, 'lstm' AS source FROM lstm
-    UNION ALL
-    SELECT day, predict_prices, 'xgb' AS source FROM xgb
-    UNION ALL
-    SELECT day, predict_prices, 'rnn' AS source FROM rnn
-""")
-rows = cur.fetchall()
+with open('predict_price/price_labels.json', 'r', encoding='UTF-8') as f:
+    price_labels = json.load(f)
 
-# 建立三個 dict 來儲存
-rf_predict_prices = {}
-lstm_predict_prices = {}
-rnn_predict_prices = {}
-xgb_predict_prices = {}
-
-# 根據來源分類
-for day, price_json, source in rows:
-    prices = json.loads(price_json)
-    if source == 'rf':
-        rf_predict_prices[day] = prices
-    elif source == 'lstm':
-        lstm_predict_prices[day] = prices
-    elif source == 'rnn':
-        rnn_predict_prices[day] = prices
-    elif source == 'xgb':
-        xgb_predict_prices[day] = prices
-
-cur.close()
-conn.close()
-
+with open('predict_price/rf_predict_prices.json', 'r', encoding='UTF-8') as f:
+    rf_predict_prices = json.load(f)
+with open('predict_price/lstm_predict_prices.json', 'r', encoding='UTF-8') as f:
+    lstm_predict_prices = json.load(f)
+with open('predict_price/rnn_predict_prices.json', 'r', encoding='UTF-8') as f:
+    rnn_predict_prices = json.load(f)
+with open('predict_price/xgb_predict_prices.json', 'r', encoding='UTF-8') as f:
+    xgb_predict_prices = json.load(f)
+with open('predict_price/arima_predict_prices.json', 'r', encoding='UTF-8') as f:
+    arima_predict_prices = json.load(f)
 
 @app.get("/start")
 def clear_and_load_stock():
@@ -174,7 +141,6 @@ class Portfolio(BaseModel):
 
 @app.post("/advance/{day}")
 def next_day_game(day:int, portfolio: Portfolio):
-    # print(rf_predict_prices[day])
     try:
         # 連線資料庫
         conn = psycopg2.connect(
@@ -197,7 +163,6 @@ def next_day_game(day:int, portfolio: Portfolio):
         cur.execute("SELECT * FROM history WHERE day=%s",(day-1, ))
         rows = cur.fetchall()
         
-        model_prices = {}
         for row in rows:
             day, user_name, holdings, cash = row
             day += 1
@@ -211,8 +176,7 @@ def next_day_game(day:int, portfolio: Portfolio):
                 })
             elif user_name != 'player':
                 model = user_name.split('_')[1]
-                if model == 'RF' or model == 'XGB' or model == 'lstm' or model == 'RNN':
-                    histories.append(model_buy_or_sell(day, model, json.loads(holdings), cash))
+                histories.append(model_buy_or_sell(day, model, json.loads(holdings), cash))
                 
             elif user_name == 'player':
                 histories.append(player_portfolio(cur, day, portfolio))
@@ -301,13 +265,15 @@ def model_buy_or_sell(day, model, holdings, cash):
     print("TEST1")
     current_price = {stock_id: values[day] for stock_id, values in price_labels.items() if len(values) > day}
     if model == 'RF':
-        predicted_prices=rf_predict_prices[day]
+        predicted_prices=rf_predict_prices[str(day)]
     elif model == "XGB":
-        predicted_prices=xgb_predict_prices[day]
+        predicted_prices=xgb_predict_prices[str(day)]
     elif model == "lstm":
-        predicted_prices=lstm_predict_prices[day]
+        predicted_prices=lstm_predict_prices[str(day)]
     elif model == 'RNN':
-        predicted_prices=rnn_predict_prices[day]
+        predicted_prices=rnn_predict_prices[str(day)]
+    elif model == 'arima':
+        predicted_prices=arima_predict_prices[str(day)]
 
     portfolio = algorithm.optimize_portfolio_dict(
         current_price=current_price, 
@@ -318,37 +284,36 @@ def model_buy_or_sell(day, model, holdings, cash):
 
     print("TEST2")
     
-    if model == 'RF' or model == 'XGB' or model == 'lstm' or model == 'RNN':
-        for stock, count in portfolio.items():
-            print(stock, count)
-            history_price = price_labels[stock][day]  # 取得當天該股票價格
-            buy_or_sell_amount = count
+    for stock, count in portfolio.items():
+        print(stock, count)
+        history_price = price_labels[stock][day]  # 取得當天該股票價格
+        buy_or_sell_amount = count
 
-            # 根據股票代碼找到對應 holdings 中的那筆資料（原始 list 會被直接修改）
-            holding = next((item for item in holdings if item["stock_name"].startswith(stock)), None)
+        # 根據股票代碼找到對應 holdings 中的那筆資料（原始 list 會被直接修改）
+        holding = next((item for item in holdings if item["stock_name"].startswith(stock)), None)
 
-            if holding is None:
-                raise ValueError(f"找不到股票代碼 {stock} 對應的持股資料")
+        if holding is None:
+            raise ValueError(f"找不到股票代碼 {stock} 對應的持股資料")
 
-            transaction_amount = buy_or_sell_amount * history_price
+        transaction_amount = buy_or_sell_amount * history_price
 
-            if buy_or_sell_amount > 0:
-                # 買進：增加持股，減少現金
-                holding["count"] += buy_or_sell_amount
-                cash -= transaction_amount
-            elif buy_or_sell_amount < 0:
-                # 賣出：檢查是否持有足夠股票
-                if holding["count"] < abs(buy_or_sell_amount):
-                    raise ValueError(f"股票 {stock} 賣出失敗，持有數量不足")
-                holding["count"] += buy_or_sell_amount  # 負值等同於減少
-                cash += abs(transaction_amount)
+        if buy_or_sell_amount > 0:
+            # 買進：增加持股，減少現金
+            holding["count"] += buy_or_sell_amount
+            cash -= transaction_amount
+        elif buy_or_sell_amount < 0:
+            # 賣出：檢查是否持有足夠股票
+            if holding["count"] < abs(buy_or_sell_amount):
+                raise ValueError(f"股票 {stock} 賣出失敗，持有數量不足")
+            holding["count"] += buy_or_sell_amount  # 負值等同於減少
+            cash += abs(transaction_amount)
 
-        return {
-            "day": day,
-            "user_name": f"al_{model}",
-            "holdings": holdings,
-            "cash": cash
-        }    
+    return {
+        "day": day,
+        "user_name": f"al_{model}",
+        "holdings": holdings,
+        "cash": cash
+    }    
 
 
 def get_single_stock_subset(df, stock_id, start_date_str, num_records):
