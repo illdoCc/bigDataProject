@@ -141,6 +141,7 @@ class Portfolio(BaseModel):
 
 @app.post("/advance/{day}")
 def next_day_game(day:int, portfolio: Portfolio):
+    # day -= 1
     try:
         # 連線資料庫
         conn = psycopg2.connect(
@@ -160,7 +161,7 @@ def next_day_game(day:int, portfolio: Portfolio):
 
         # only updates the history with history of previous day
         # -2 because database starts from day 0, but frontend starts from day 1
-        cur.execute("SELECT * FROM history WHERE day=%s",(day-1, ))
+        cur.execute("SELECT * FROM history WHERE day=%s",(day-2, ))
         rows = cur.fetchall()
         
         for row in rows:
@@ -171,7 +172,7 @@ def next_day_game(day:int, portfolio: Portfolio):
                 histories.append({
                     "day": day,
                     "user_name": "no_buy",
-                    "holdings": holdings,
+                    "holdings": json.loads(holdings),
                     "cash": cash
                 })
             elif user_name != 'player':
