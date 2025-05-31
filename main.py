@@ -53,6 +53,8 @@ with open('predict_price/xgb_predict_prices.json', 'r', encoding='UTF-8') as f:
 with open('predict_price/arima_predict_prices.json', 'r', encoding='UTF-8') as f:
     arima_predict_prices = json.load(f)
 
+name_map = {'player': 'player', 'al_lstm': 'player(LSTM)','al_arima': 'player(ARIMA)','al_RNN': 'player(RNN)','al_RF': 'player(Random Forest)','al_XGB': 'player(XGBoost)','no_buy': 'player(No Buy)'}
+
 @app.get("/start")
 def clear_and_load_stock():
     try:
@@ -119,7 +121,7 @@ def clear_and_load_stock():
 
             histories.append({
                 "day": 1,
-                "user_name": user,
+                "user_name": name_map[user],
                 "holdings": holdings,
                 "cash": 5000000
             })
@@ -171,7 +173,7 @@ def next_day_game(day:int, portfolio: Portfolio):
             if user_name == 'no_buy':
                 histories.append({
                     "day": day,
-                    "user_name": "no_buy",
+                    "user_name":  name_map['no_buy'],
                     "holdings": json.loads(holdings),
                     "cash": cash
                 })
@@ -311,7 +313,7 @@ def model_buy_or_sell(day, model, holdings, cash):
 
     return {
         "day": day,
-        "user_name": f"al_{model}",
+        "user_name": name_map[f"al_{model}"],
         "holdings": holdings,
         "cash": cash
     }    
