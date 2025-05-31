@@ -247,19 +247,11 @@ def optimize_portfolio_dict(
     if '2330' in ticker_to_index:
         ef.add_constraint(lambda w: w[ticker_to_index['2330']] >= 0.3)
 
-    print("mu:", mu.values)
-    print("S shape:", S.shape)
-    print("S any NaN?", np.isnan(S.values).any())
-    print("mu any NaN?", np.isnan(mu.values).any())
-    print("S is singular?", np.linalg.matrix_rank(S.values) < S.shape[0])
-    print("mu:", mu)
     # 最大 Sharpe 配置，Try/Except 防呆
     try:
         ef.max_sharpe()
         weights = ef.clean_weights(cutoff=0.001)
     except Exception as e:
-        print(f"最佳化失敗: {e}")
-        print("嘗試用不同 solver 或調整參數。")
         return {}
 
     # === output: adjustment_dict ===
