@@ -59,12 +59,15 @@ cur.execute("""
     SELECT day, predict_prices, 'lstm' AS source FROM lstm
     UNION ALL
     SELECT day, predict_prices, 'xgb' AS source FROM xgb
+    UNION ALL
+    SELECT day, predict_prices, 'rnn' AS source FROM rnn
 """)
 rows = cur.fetchall()
 
 # 建立三個 dict 來儲存
 rf_predict_prices = {}
 lstm_predict_prices = {}
+rnn_predict_prices = {}
 xgb_predict_prices = {}
 
 # 根據來源分類
@@ -74,6 +77,8 @@ for day, price_json, source in rows:
         rf_predict_prices[day] = prices
     elif source == 'lstm':
         lstm_predict_prices[day] = prices
+    elif source == 'rnn':
+        rnn_predict_prices[day] = prices
     elif source == 'xgb':
         xgb_predict_prices[day] = prices
 
@@ -206,7 +211,7 @@ def next_day_game(day:int, portfolio: Portfolio):
                 })
             elif user_name != 'player':
                 model = user_name.split('_')[1]
-                if model == 'RF' or model == 'XGB' or model == 'lstm':
+                if model == 'RF' or model == 'XGB' or model == 'lstm' or model == 'RNN':
                     histories.append(model_buy_or_sell(day, model, json.loads(holdings), cash))
                 
             elif user_name == 'player':
@@ -296,11 +301,13 @@ def model_buy_or_sell(day, model, holdings, cash):
     print("TEST1")
     current_price = {stock_id: values[day] for stock_id, values in price_labels.items() if len(values) > day}
     if model == 'RF':
-        predicted_prices=rf_predict_prices[day],
+        predicted_prices=rf_predict_prices[day]
     elif model == "XGB":
-        predicted_prices=xgb_predict_prices[day],
+        predicted_prices=xgb_predict_prices[day]
     elif model == "lstm":
-        predicted_prices=lstm_predict_prices[day],
+        predicted_prices=lstm_predict_prices[day]
+    elif model == 'RNN':
+        predicted_prices=rnn_predict_prices[day]
 
     portfolio = algorithm.optimize_portfolio_dict(
         current_price=current_price, 
@@ -311,7 +318,7 @@ def model_buy_or_sell(day, model, holdings, cash):
 
     print("TEST2")
     
-    if model == 'RF' or model == 'XGB' or model == 'lstm':
+    if model == 'RF' or model == 'XGB' or model == 'lstm' or model == 'RNN':
         for stock, count in portfolio.items():
             print(stock, count)
             history_price = price_labels[stock][day]  # 取得當天該股票價格
