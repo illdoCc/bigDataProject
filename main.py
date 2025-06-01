@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import traceback
 from dotenv import load_dotenv
 import os
+from copy import deepcopy
 
 app = FastAPI()
 
@@ -72,6 +73,7 @@ def clear_and_load_stock():
 
         # 刷新stock table
         stock_init_prices = [] # return value
+        default_holdings=[]
         holdings = []
         for id, stock_symbol in enumerate(ids):
             # 取30天
@@ -93,6 +95,7 @@ def clear_and_load_stock():
                 "stock_name": f"{stock_symbol} {stock_name.get(str(stock_symbol), '')}",
                 "count": 0
             })
+            default_holdings = deepcopy(holdings)
             # holdings[stock_symbol] = 0
             # 插入資料
             cur.execute(
@@ -104,6 +107,7 @@ def clear_and_load_stock():
         histories = [] # return value
         user_list = ['player', 'al_lstm', 'al_arima', 'al_RNN', 'al_RF', 'al_XGB', 'no_buy', 'all_in_tsmc']
         for user in user_list:
+            holdings = deepcopy(default_holdings)
             cash = 5000000
             if user == 'all_in_tsmc':
                 holdings[22]['count'] = 10080
